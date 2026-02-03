@@ -32,6 +32,9 @@ migrate_working_dir/
 .env
 /build/
 
+# Personal learning notes
+flutter_dart_lesson.md
+
 # Symbolication related
 app.*.symbols
 
