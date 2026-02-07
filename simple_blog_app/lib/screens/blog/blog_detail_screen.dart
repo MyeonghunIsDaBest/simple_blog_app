@@ -1,16 +1,18 @@
+// lib/screens/blog/blog_detail_screen.dart
+
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:timeago/timeago.dart' as timeago;
-
+import '../../models/comment_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/blog_provider.dart';
 
 class BlogDetailScreen extends StatefulWidget {
   final String blogId;
+
   const BlogDetailScreen({super.key, required this.blogId});
 
   @override
@@ -19,265 +21,630 @@ class BlogDetailScreen extends StatefulWidget {
 
 class _BlogDetailScreenState extends State<BlogDetailScreen> {
   final _commentCtrl = TextEditingController();
-  final _picker = ImagePicker();
+  final _scrollCtrl = ScrollController();
   File? _commentImage;
-  bool _submitting = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<BlogProvider>().loadBlogById(widget.blogId);
+    Future.microtask(() {
+      context.read<BlogProvider>().loadBlogDetail(widget.blogId);
     });
   }
 
   @override
   void dispose() {
     _commentCtrl.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _pickImage() async {
+  String? get _currentUserId => context.read<AuthProvider>().currentUserId;
+
+  String _formatDate(String dateStr) {
     try {
-      final img = await _picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 75,
-      );
-      if (img != null) setState(() => _commentImage = File(img.path));
+      final date = DateTime.parse(dateStr);
+      return DateFormat('MMMM dd, yyyy • hh:mm a').format(date);
     } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to pick image')));
-      }
+      return dateStr;
     }
   }
 
-  Future<void> _submitComment() async {
-    final text = _commentCtrl.text.trim();
-    if (text.isEmpty && _commentImage == null) return;
-
-    setState(() => _submitting = true);
-
-    final ok = await context.read<BlogProvider>().addComment(
-          blogId: widget.blogId,
-          content: text,
-          imageFile: _commentImage,
-        );
-
-    if (mounted) {
-      setState(() => _submitting = false);
-      if (ok) {
-        _commentCtrl.clear();
-        setState(() => _commentImage = null);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to add comment')));
-      }
+  String _timeAgo(String dateStr) {
+    try {
+      final date = DateTime.parse(dateStr);
+      final diff = DateTime.now().difference(date);
+      if (diff.inMinutes < 1) return 'Just now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+      if (diff.inHours < 24) return '${diff.inHours}h ago';
+      if (diff.inDays < 7) return '${diff.inDays}d ago';
+      return DateFormat('MMM dd').format(date);
+    } catch (_) {
+      return dateStr;
     }
   }
 
-  void _confirmDelete() {
-    showDialog(
+  Future<void> _handleDelete() async {
+    final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Blog'),
-        content: const Text('Are you sure you want to delete this blog?'),
+        content: const Text(
+          'This will permanently delete this blog and all its comments.',
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              final ok =
-                  await context.read<BlogProvider>().deleteBlog(widget.blogId);
-              if (ok && mounted) context.go('/');
-            },
+            onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
+
+    if (confirm == true && mounted) {
+      final success =
+          await context.read<BlogProvider>().deleteBlog(widget.blogId);
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Blog deleted'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        context.go('/');
+      }
+    }
+  }
+
+  Future<void> _pickCommentImage() async {
+    final picker = ImagePicker();
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_rounded),
+              title: const Text('Gallery'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final p = await picker.pickImage(
+                  source: ImageSource.gallery,
+                  maxWidth: 1024,
+                  maxHeight: 1024,
+                  imageQuality: 75,
+                );
+                if (p != null) setState(() => _commentImage = File(p.path));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_rounded),
+              title: const Text('Camera'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final p = await picker.pickImage(
+                  source: ImageSource.camera,
+                  maxWidth: 1024,
+                  maxHeight: 1024,
+                  imageQuality: 75,
+                );
+                if (p != null) setState(() => _commentImage = File(p.path));
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _submitComment() async {
+    final text = _commentCtrl.text.trim();
+    if (text.isEmpty && _commentImage == null) return;
+
+    final blogProvider = context.read<BlogProvider>();
+    final success = await blogProvider.addComment(
+      blogId: widget.blogId,
+      content: text.isNotEmpty ? text : '📷',
+      imageFile: _commentImage,
+    );
+
+    if (success && mounted) {
+      _commentCtrl.clear();
+      setState(() => _commentImage = null);
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (_scrollCtrl.hasClients) {
+          _scrollCtrl.animateTo(
+            _scrollCtrl.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentUserId = context.read<AuthProvider>().user?.id;
+    final blogProvider = context.watch<BlogProvider>();
+    final blog = blogProvider.currentBlog;
+    final comments = blogProvider.comments;
+    final theme = Theme.of(context);
+    final isOwner = blog?.userId == _currentUserId;
 
-    return Consumer<BlogProvider>(
-      builder: (context, bp, _) {
-        final blog = bp.selectedBlog;
-
-        // Loading
-        if (bp.status == BlogStatus.loading && blog == null) {
-          return Scaffold(
-            appBar: AppBar(),
-            body: const Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        // Not found
-        if (blog == null) {
-          return Scaffold(
-            appBar: AppBar(),
-            body: const Center(child: Text('Blog not found')),
-          );
-        }
-
-        final isOwner = blog.userId == currentUserId;
-
-        return Scaffold(
-          body: CustomScrollView(
-            slivers: [
-              // AppBar
-              SliverAppBar(
-                expandedHeight: blog.imageUrl != null ? 250 : 0,
-                pinned: true,
-                flexibleSpace: blog.imageUrl != null
-                    ? FlexibleSpaceBar(
-                        background: CachedNetworkImage(
-                          imageUrl: blog.imageUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) =>
-                              Container(color: Colors.grey.shade200),
-                          errorWidget: (_, __, ___) =>
-                              Container(color: Colors.grey.shade200),
-                        ),
-                      )
-                    : null,
-                actions: isOwner
-                    ? [
-                        IconButton(
-                          icon: const Icon(Icons.edit),
-                          onPressed: () =>
-                              context.push('/edit-blog/${blog.id}'),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete),
-                          onPressed: _confirmDelete,
-                        ),
-                      ]
-                    : null,
+    if (blogProvider.detailLoading) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: theme.colorScheme.primary,
+                ),
               ),
+              const SizedBox(height: 20),
+              Text(
+                'Loading...',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
-              // Blog Content
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Title
-                      Text(blog.title,
-                          style: Theme.of(context)
-                              .textTheme
-                              .headlineSmall
-                              ?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              )),
-                      const SizedBox(height: 16),
+    if (blog == null) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.article_outlined,
+                  size: 56,
+                  color: theme.colorScheme.onSurface.withOpacity(0.2)),
+              const SizedBox(height: 16),
+              const Text('Blog not found'),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => context.go('/'),
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(140, 44),
+                ),
+                child: const Text('Go Home'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
-                      // Author
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 20,
-                            backgroundColor: Colors.grey.shade200,
-                            backgroundImage: blog.author?.avatarUrl != null
-                                ? CachedNetworkImageProvider(
-                                    blog.author!.avatarUrl!)
-                                : null,
-                            child: blog.author?.avatarUrl == null
-                                ? Text(
-                                    (blog.author?.displayNameOrEmail ?? '?')[0]
-                                        .toUpperCase())
-                                : null,
+    return Scaffold(
+      body: Column(
+        children: [
+          Expanded(
+            child: CustomScrollView(
+              controller: _scrollCtrl,
+              slivers: [
+                // ── Sliver AppBar with image ──
+                SliverAppBar(
+                  expandedHeight: blog.imageUrl.isNotEmpty ? 280 : 0,
+                  pinned: true,
+                  leading: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: theme.scaffoldBackgroundColor.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.arrow_back_rounded, size: 20),
+                        onPressed: () {
+                          blogProvider.clearCurrentBlog();
+                          context.go('/');
+                        },
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    if (isOwner) ...[
+                      Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color:
+                                theme.scaffoldBackgroundColor.withOpacity(0.8),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  blog.author?.displayNameOrEmail ?? 'Unknown',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleSmall
-                                      ?.copyWith(fontWeight: FontWeight.w600),
-                                ),
-                                if (blog.createdAt != null)
-                                  Text(timeago.format(blog.createdAt!),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall),
-                              ],
+                          child: IconButton(
+                            icon: const Icon(Icons.edit_outlined, size: 20),
+                            onPressed: () => context.push('/edit/${blog.id}'),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding:
+                            const EdgeInsets.only(right: 8, top: 8, bottom: 8),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.delete_outline_rounded,
+                                size: 20, color: Colors.red),
+                            onPressed: _handleDelete,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                  flexibleSpace: blog.imageUrl.isNotEmpty
+                      ? FlexibleSpaceBar(
+                          background: Image.network(
+                            blog.imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: theme.colorScheme.primary.withOpacity(0.1),
                             ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
+                        )
+                      : null,
+                ),
 
-                      // Content
-                      Text(blog.content,
-                          style: Theme.of(context).textTheme.bodyLarge),
-                      const SizedBox(height: 32),
-                      const Divider(),
-                      const SizedBox(height: 8),
+                // ── Content ──
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Title
+                        Text(
+                          blog.title,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            height: 1.3,
+                          ),
+                        ),
 
-                      Text('Comments (${bp.comments.length})',
-                          style:
-                              Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  )),
-                      const SizedBox(height: 8),
-                    ],
+                        const SizedBox(height: 20),
+
+                        // Author card
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary.withOpacity(0.04),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color:
+                                  theme.colorScheme.primary.withOpacity(0.08),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 22,
+                                backgroundColor:
+                                    theme.colorScheme.primary.withOpacity(0.1),
+                                backgroundImage:
+                                    blog.author?.avatarUrl.isNotEmpty == true
+                                        ? NetworkImage(blog.author!.avatarUrl)
+                                        : null,
+                                child: blog.author?.avatarUrl.isEmpty != false
+                                    ? Text(
+                                        blog.author?.initials ?? '?',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          color: theme.colorScheme.primary,
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      blog.author?.nameOrEmail ?? 'Unknown',
+                                      style:
+                                          theme.textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _formatDate(blog.createdAt),
+                                      style:
+                                          theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurface
+                                            .withOpacity(0.5),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 28),
+
+                        // Content
+                        Text(
+                          blog.content,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            height: 1.8,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+
+                        const SizedBox(height: 36),
+
+                        // Comments section
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color:
+                                    theme.colorScheme.primary.withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.chat_bubble_outline_rounded,
+                                size: 18,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Comments',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color:
+                                    theme.colorScheme.primary.withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                '${comments.length}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        if (comments.isEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(vertical: 32),
+                            child: Center(
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.forum_outlined,
+                                    size: 36,
+                                    color: theme.colorScheme.onSurface
+                                        .withOpacity(0.15),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    'Start the conversation',
+                                    style: TextStyle(
+                                      color: theme.colorScheme.onSurface
+                                          .withOpacity(0.35),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        else
+                          ...comments.map(
+                            (c) => _buildCommentCard(c, theme),
+                          ),
+
+                        const SizedBox(height: 20),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-
-              // Comments
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, i) {
-                    final c = bp.comments[i];
-                    return _CommentTile(
-                      data: c,
-                      isOwner: c['user_id'] == currentUserId,
-                      onDelete: () =>
-                          bp.deleteComment(c['id'] as String, widget.blogId),
-                    );
-                  },
-                  childCount: bp.comments.length,
-                ),
-              ),
-
-              // Bottom spacing
-              const SliverToBoxAdapter(child: SizedBox(height: 100)),
-            ],
+              ],
+            ),
           ),
 
           // Comment input
-          bottomSheet: _buildCommentInput(context),
-        );
-      },
+          _buildCommentInput(theme, blogProvider),
+        ],
+      ),
     );
   }
 
-  Widget _buildCommentInput(BuildContext context) {
+  Widget _buildCommentCard(CommentModel comment, ThemeData theme) {
+    final isOwner = comment.userId == _currentUserId;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.cardTheme.color,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.dividerTheme.color ?? Colors.grey.withOpacity(0.15),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                backgroundImage: comment.author?.avatarUrl.isNotEmpty == true
+                    ? NetworkImage(comment.author!.avatarUrl)
+                    : null,
+                child: comment.author?.avatarUrl.isEmpty != false
+                    ? Text(
+                        comment.author?.initials ?? '?',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.primary,
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      comment.author?.nameOrEmail ?? 'Unknown',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      _timeAgo(comment.createdAt),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withOpacity(0.4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isOwner)
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                    color: Colors.red.withOpacity(0.7),
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Delete Comment'),
+                          content: const Text('Remove this comment?'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                context
+                                    .read<BlogProvider>()
+                                    .deleteComment(comment.id);
+                              },
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.red,
+                              ),
+                              child: const Text('Delete'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          Text(
+            comment.content,
+            style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+          ),
+
+          if (comment.imageUrl.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 200),
+                child: Image.network(
+                  comment.imageUrl,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, progress) {
+                    if (progress == null) return child;
+                    return Container(
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    );
+                  },
+                  errorBuilder: (_, __, ___) => const SizedBox(),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommentInput(ThemeData theme, BlogProvider blogProvider) {
     return Container(
       padding: EdgeInsets.only(
         left: 16,
         right: 16,
-        top: 8,
-        bottom: MediaQuery.of(context).padding.bottom + 8,
+        top: 12,
+        bottom: MediaQuery.of(context).padding.bottom + 12,
       ),
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        border: Border(top: BorderSide(color: Colors.grey.shade300)),
+        color: theme.cardTheme.color,
+        border: Border(
+          top: BorderSide(
+            color: theme.dividerTheme.color ?? Colors.grey.withOpacity(0.15),
+          ),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -285,14 +652,19 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
           // Image preview
           if (_commentImage != null)
             Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              height: 80,
+              margin: const EdgeInsets.only(bottom: 10),
+              height: 70,
+              width: double.infinity,
               child: Stack(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.file(_commentImage!,
-                        height: 80, fit: BoxFit.cover),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.file(
+                      _commentImage!,
+                      height: 70,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
                   ),
                   Positioned(
                     top: 4,
@@ -302,9 +674,11 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
                       child: Container(
                         padding: const EdgeInsets.all(4),
                         decoration: const BoxDecoration(
-                            color: Colors.black54, shape: BoxShape.circle),
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
                         child: const Icon(Icons.close,
-                            size: 16, color: Colors.white),
+                            size: 12, color: Colors.white),
                       ),
                     ),
                   ),
@@ -312,139 +686,94 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
               ),
             ),
 
-          // Input row
           Row(
             children: [
-              IconButton(
-                icon: const Icon(Icons.image),
-                onPressed: _pickImage,
-              ),
-              Expanded(
-                child: TextField(
-                  controller: _commentCtrl,
-                  maxLines: 3,
-                  minLines: 1,
-                  decoration: const InputDecoration(
-                    hintText: 'Write a comment...',
-                    border: InputBorder.none,
-                    fillColor: Colors.transparent,
+              // Image button
+              Container(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: IconButton(
+                  icon: Icon(
+                    Icons.image_outlined,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
+                  onPressed: _pickCommentImage,
+                  constraints: const BoxConstraints(
+                    minWidth: 42,
+                    minHeight: 42,
                   ),
                 ),
               ),
-              _submitting
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2)),
+              const SizedBox(width: 10),
+
+              // Text field
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: theme.inputDecorationTheme.fillColor,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: theme.dividerTheme.color ??
+                          Colors.grey.withOpacity(0.15),
+                    ),
+                  ),
+                  child: TextField(
+                    controller: _commentCtrl,
+                    maxLines: 3,
+                    minLines: 1,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      hintText: 'Write a comment...',
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 10,
+                      ),
+                      hintStyle: TextStyle(
+                        color: theme.colorScheme.onSurface.withOpacity(0.3),
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+
+              // Send button
+              blogProvider.actionLoading
+                  ? Container(
+                      width: 42,
+                      height: 42,
+                      padding: const EdgeInsets.all(10),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: theme.colorScheme.primary,
+                      ),
                     )
-                  : IconButton(
-                      icon: const Icon(Icons.send),
-                      onPressed: _submitComment,
+                  : Container(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.send_rounded,
+                          size: 18,
+                          color: Colors.white,
+                        ),
+                        onPressed: _submitComment,
+                        constraints: const BoxConstraints(
+                          minWidth: 42,
+                          minHeight: 42,
+                        ),
+                      ),
                     ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Comment tile ──
-
-class _CommentTile extends StatelessWidget {
-  final Map<String, dynamic> data;
-  final bool isOwner;
-  final VoidCallback onDelete;
-
-  const _CommentTile({
-    required this.data,
-    required this.isOwner,
-    required this.onDelete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final profile = data['profiles'] as Map<String, dynamic>?;
-    final avatar = profile?['avatar_url'] as String?;
-    final name = profile?['display_name'] as String? ??
-        (profile?['email'] as String?)?.split('@').first ??
-        'Unknown';
-    final content = data['content'] as String? ?? '';
-    final imgUrl = data['image_url'] as String?;
-    final created = data['created_at'] != null
-        ? DateTime.tryParse(data['created_at'] as String)
-        : null;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: Colors.grey.shade200,
-            backgroundImage:
-                avatar != null ? CachedNetworkImageProvider(avatar) : null,
-            child: avatar == null ? Text(name[0].toUpperCase()) : null,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardColor,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(name,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(fontWeight: FontWeight.w600)),
-                          ),
-                          if (isOwner)
-                            GestureDetector(
-                              onTap: onDelete,
-                              child: const Icon(Icons.close, size: 16),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(content),
-                      if (imgUrl != null) ...[
-                        const SizedBox(height: 8),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: CachedNetworkImage(
-                            imageUrl: imgUrl,
-                            placeholder: (_, __) => Container(
-                                height: 150, color: Colors.grey.shade200),
-                            errorWidget: (_, __, ___) =>
-                                const Icon(Icons.broken_image),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                if (created != null)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 12, top: 4),
-                    child: Text(timeago.format(created),
-                        style: Theme.of(context).textTheme.bodySmall),
-                  ),
-              ],
-            ),
           ),
         ],
       ),

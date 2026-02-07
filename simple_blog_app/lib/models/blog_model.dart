@@ -5,9 +5,9 @@ class BlogModel {
   final String userId;
   final String title;
   final String content;
-  final String? imageUrl;
-  final DateTime? createdAt;
-  final DateTime? updatedAt;
+  final String imageUrl;
+  final String createdAt;
+  final String updatedAt;
   final ProfileModel? author;
   final int commentCount;
 
@@ -16,9 +16,9 @@ class BlogModel {
     required this.userId,
     required this.title,
     required this.content,
-    this.imageUrl,
-    this.createdAt,
-    this.updatedAt,
+    this.imageUrl = '',
+    this.createdAt = '',
+    this.updatedAt = '',
     this.author,
     this.commentCount = 0,
   });
@@ -34,13 +34,9 @@ class BlogModel {
       userId: json['user_id'] as String,
       title: json['title'] as String,
       content: json['content'] as String,
-      imageUrl: json['image_url'] as String?,
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : null,
-      updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
-          : null,
+      imageUrl: json['image_url'] as String? ?? '',
+      createdAt: json['created_at'] as String? ?? '',
+      updatedAt: json['updated_at'] as String? ?? '',
       author: author,
       commentCount: json['comment_count'] as int? ?? 0,
     );
@@ -51,7 +47,7 @@ class BlogModel {
       'user_id': userId,
       'title': title,
       'content': content,
-      'image_url': imageUrl,
+      'image_url': imageUrl.isNotEmpty ? imageUrl : null,
     };
   }
 
@@ -69,7 +65,7 @@ class BlogModel {
       content: content ?? this.content,
       imageUrl: imageUrl ?? this.imageUrl,
       createdAt: createdAt,
-      updatedAt: DateTime.now(),
+      updatedAt: DateTime.now().toIso8601String(),
       author: author ?? this.author,
       commentCount: commentCount ?? this.commentCount,
     );
@@ -78,5 +74,10 @@ class BlogModel {
   String get excerpt {
     if (content.length <= 150) return content;
     return '${content.substring(0, 150)}...';
+  }
+
+  String preview({int maxLength = 150}) {
+    if (content.length <= maxLength) return content;
+    return '${content.substring(0, maxLength)}...';
   }
 }

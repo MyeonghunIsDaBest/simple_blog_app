@@ -56,12 +56,12 @@ class AppRouter {
         },
       ),
       GoRoute(
-        path: '/create-blog',
+        path: '/create',
         name: 'create-blog',
         builder: (context, state) => const CreateBlogScreen(),
       ),
       GoRoute(
-        path: '/edit-blog/:id',
+        path: '/edit/:id',
         name: 'edit-blog',
         builder: (context, state) {
           final blogId = state.pathParameters['id']!;

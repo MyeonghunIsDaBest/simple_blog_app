@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../models/blog_model.dart';
+import '../models/comment_model.dart';
 import '../providers/auth_provider.dart';
 import '../services/blog_service.dart';
 
@@ -14,7 +15,7 @@ class BlogProvider extends ChangeNotifier {
   BlogStatus _status = BlogStatus.initial;
   List<BlogModel> _blogs = [];
   BlogModel? _selectedBlog;
-  List<Map<String, dynamic>> _comments = [];
+  List<CommentModel> _comments = [];
   String? _errorMessage;
   int _currentPage = 0;
   bool _hasMore = true;
@@ -23,10 +24,15 @@ class BlogProvider extends ChangeNotifier {
   BlogStatus get status => _status;
   List<BlogModel> get blogs => _blogs;
   BlogModel? get selectedBlog => _selectedBlog;
-  List<Map<String, dynamic>> get comments => _comments;
+  BlogModel? get currentBlog => _selectedBlog;
+  List<CommentModel> get comments => _comments;
   String? get errorMessage => _errorMessage;
+  String? get error => _errorMessage;
   bool get hasMore => _hasMore;
   bool get isLoadingMore => _isLoadingMore;
+  bool get blogsLoading => _status == BlogStatus.loading && _selectedBlog == null;
+  bool get detailLoading => _status == BlogStatus.loading && _selectedBlog == null;
+  bool get actionLoading => _status == BlogStatus.loading;
 
   void updateAuth(AuthProvider authProvider) {
     _authProvider = authProvider;
@@ -83,6 +89,8 @@ class BlogProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> loadBlogDetail(String id) => loadBlogById(id);
+
   Future<bool> createBlog({
     required String title,
     required String content,
@@ -119,6 +127,7 @@ class BlogProvider extends ChangeNotifier {
     required String content,
     File? imageFile,
     String? existingImageUrl,
+    bool removeImage = false,
   }) async {
     try {
       _status = BlogStatus.loading;
@@ -129,7 +138,7 @@ class BlogProvider extends ChangeNotifier {
         title: title,
         content: content,
         imageFile: imageFile,
-        existingImageUrl: existingImageUrl,
+        existingImageUrl: removeImage ? null : existingImageUrl,
       );
 
       final index = _blogs.indexWhere((b) => b.id == id);
@@ -169,7 +178,10 @@ class BlogProvider extends ChangeNotifier {
 
   Future<void> loadComments(String blogId) async {
     try {
-      _comments = await _blogService.getComments(blogId);
+      final rawComments = await _blogService.getComments(blogId);
+      _comments = rawComments
+          .map((e) => CommentModel.fromJson(e))
+          .toList();
       notifyListeners();
     } catch (_) {
       _errorMessage = 'Failed to load comments';
@@ -185,14 +197,14 @@ class BlogProvider extends ChangeNotifier {
     if (_authProvider?.user == null) return false;
 
     try {
-      final comment = await _blogService.createComment(
+      final commentData = await _blogService.createComment(
         blogId: blogId,
         userId: _authProvider!.user!.id,
         content: content,
         imageFile: imageFile,
       );
 
-      _comments.add(comment);
+      _comments.add(CommentModel.fromJson(commentData));
 
       if (_selectedBlog != null && _selectedBlog!.id == blogId) {
         _selectedBlog = _selectedBlog!.copyWith(
@@ -209,12 +221,13 @@ class BlogProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> deleteComment(String commentId, String blogId) async {
+  Future<bool> deleteComment(String commentId, [String? blogId]) async {
     try {
       await _blogService.deleteComment(commentId);
-      _comments.removeWhere((c) => c['id'] == commentId);
+      _comments.removeWhere((c) => c.id == commentId);
 
-      if (_selectedBlog != null && _selectedBlog!.id == blogId) {
+      final effectiveBlogId = blogId ?? _selectedBlog?.id;
+      if (_selectedBlog != null && _selectedBlog!.id == effectiveBlogId) {
         _selectedBlog = _selectedBlog!.copyWith(
           commentCount: _selectedBlog!.commentCount - 1,
         );
@@ -247,4 +260,6 @@ class BlogProvider extends ChangeNotifier {
     _comments = [];
     notifyListeners();
   }
+
+  void clearCurrentBlog() => clearSelectedBlog();
 }

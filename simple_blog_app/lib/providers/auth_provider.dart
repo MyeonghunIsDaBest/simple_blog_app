@@ -19,7 +19,10 @@ class AuthProvider extends ChangeNotifier {
   User? get user => _user;
   ProfileModel? get profile => _profile;
   String? get errorMessage => _errorMessage;
+  String? get error => _errorMessage;
   bool get isAuthenticated => _status == AuthStatus.authenticated;
+  bool get isLoading => _status == AuthStatus.loading;
+  String? get currentUserId => _user?.id;
 
   AuthProvider() {
     _init();
@@ -59,6 +62,7 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> signUp({
     required String email,
     required String password,
+    String? displayName,
   }) async {
     try {
       _status = AuthStatus.loading;

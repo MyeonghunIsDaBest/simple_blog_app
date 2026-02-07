@@ -1,10 +1,9 @@
-import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
-import 'package:shimmer/shimmer.dart';
-import 'package:timeago/timeago.dart' as timeago;
+// lib/screens/blog/blog_list_screen.dart
 
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../../models/blog_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/blog_provider.dart';
@@ -18,216 +17,267 @@ class BlogListScreen extends StatefulWidget {
 }
 
 class _BlogListScreenState extends State<BlogListScreen> {
-  final _scrollCtrl = ScrollController();
-  final _searchCtrl = TextEditingController();
-  bool _searching = false;
-  List<BlogModel> _searchResults = [];
+  bool _initialized = false;
 
   @override
-  void initState() {
-    super.initState();
-    _scrollCtrl.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<BlogProvider>().loadBlogs(refresh: true);
-    });
-  }
-
-  @override
-  void dispose() {
-    _scrollCtrl.dispose();
-    _searchCtrl.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (_scrollCtrl.position.pixels >=
-        _scrollCtrl.position.maxScrollExtent - 200) {
-      context.read<BlogProvider>().loadBlogs();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      _initialized = true;
+      final auth = context.read<AuthProvider>();
+      if (auth.isAuthenticated) {
+        context.read<BlogProvider>().loadBlogs();
+      }
     }
   }
 
-  Future<void> _onSearch(String q) async {
-    if (q.trim().isEmpty) {
-      setState(() {
-        _searching = false;
-        _searchResults = [];
-      });
-      return;
+  Future<void> _handleLogout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign Out'),
+        content: const Text('Are you sure you want to sign out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      await context.read<AuthProvider>().signOut();
+      if (mounted) context.go('/login');
     }
-    setState(() => _searching = true);
-    final results = await context.read<BlogProvider>().searchBlogs(q.trim());
-    if (mounted) setState(() => _searchResults = results);
   }
 
   @override
   Widget build(BuildContext context) {
+    final blogProvider = context.watch<BlogProvider>();
+    final authProvider = context.watch<AuthProvider>();
+    final themeProvider = context.watch<ThemeProvider>();
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: _searching
-            ? TextField(
-                controller: _searchCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: 'Search blogs...',
-                  border: InputBorder.none,
-                  fillColor: Colors.transparent,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    theme.colorScheme.primary,
+                    theme.colorScheme.primary.withOpacity(0.7),
+                  ],
                 ),
-                onChanged: _onSearch,
-              )
-            : const Text('Blog'),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.edit_note_rounded,
+                size: 20,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text('Blog'),
+          ],
+        ),
         actions: [
+          // Theme
           IconButton(
-            icon: Icon(_searching ? Icons.close : Icons.search),
-            onPressed: () {
-              setState(() {
-                _searching = !_searching;
-                if (!_searching) {
-                  _searchCtrl.clear();
-                  _searchResults = [];
-                }
-              });
-            },
+            icon: Icon(
+              themeProvider.isDark
+                  ? Icons.light_mode_rounded
+                  : Icons.dark_mode_rounded,
+              size: 20,
+            ),
+            onPressed: () => themeProvider.toggleTheme(),
           ),
-          Consumer<ThemeProvider>(
-            builder: (context, tp, _) {
-              return IconButton(
-                icon: Icon(tp.isDarkMode ? Icons.light_mode : Icons.dark_mode),
-                onPressed: () => tp.toggleTheme(),
-              );
-            },
+          // Profile
+          GestureDetector(
+            onTap: () => context.push('/profile'),
+            child: _buildAvatar(authProvider, theme),
           ),
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'profile') context.push('/profile');
-              if (v == 'logout') {
-                context.read<AuthProvider>().signOut();
-                context.go('/login');
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'profile',
-                child: Row(
-                  children: [
-                    Icon(Icons.person_outline),
-                    SizedBox(width: 8),
-                    Text('Profile'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout),
-                    SizedBox(width: 8),
-                    Text('Logout'),
-                  ],
-                ),
-              ),
-            ],
+          const SizedBox(width: 4),
+          // Logout
+          IconButton(
+            icon: const Icon(Icons.logout_rounded, size: 20),
+            onPressed: _handleLogout,
           ),
+          const SizedBox(width: 8),
         ],
       ),
-      body: Consumer<BlogProvider>(
-        builder: (context, bp, _) {
-          final items = _searching ? _searchResults : bp.blogs;
-
-          if (bp.status == BlogStatus.loading && items.isEmpty) {
-            return _buildShimmer();
-          }
-
-          if (bp.status == BlogStatus.error && items.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text(bp.errorMessage ?? 'Something went wrong'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => bp.loadBlogs(refresh: true),
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          if (items.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.article_outlined,
-                      size: 64, color: Colors.grey.shade400),
-                  const SizedBox(height: 16),
-                  Text(_searching ? 'No results found' : 'No blogs yet',
-                      style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  Text(
-                    _searching
-                        ? 'Try a different search'
-                        : 'Create the first blog!',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return RefreshIndicator(
-            onRefresh: () => bp.loadBlogs(refresh: true),
-            child: ListView.builder(
-              controller: _scrollCtrl,
-              padding: const EdgeInsets.all(16),
-              itemCount: items.length + (bp.hasMore && !_searching ? 1 : 0),
-              itemBuilder: (context, i) {
-                if (i == items.length) {
-                  return const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                return _BlogCard(blog: items[i]);
-              },
-            ),
-          );
-        },
-      ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/create-blog'),
-        child: const Icon(Icons.add),
+        onPressed: () => context.push('/create'),
+        child: const Icon(Icons.add_rounded),
+      ),
+      body: _buildBody(blogProvider, theme),
+    );
+  }
+
+  Widget _buildAvatar(AuthProvider auth, ThemeData theme) {
+    final profile = auth.profile;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: CircleAvatar(
+        radius: 17,
+        backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+        backgroundImage: profile?.avatarUrl.isNotEmpty == true
+            ? NetworkImage(profile!.avatarUrl)
+            : null,
+        child: profile?.avatarUrl.isEmpty != false
+            ? Text(
+                profile?.initials ?? '?',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.primary,
+                ),
+              )
+            : null,
       ),
     );
   }
 
-  Widget _buildShimmer() {
-    return Shimmer.fromColors(
-      baseColor: Colors.grey.shade300,
-      highlightColor: Colors.grey.shade100,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: 5,
-        itemBuilder: (_, __) {
-          return Card(
-            margin: const EdgeInsets.only(bottom: 16),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                      width: double.infinity, height: 150, color: Colors.white),
-                  const SizedBox(height: 12),
-                  Container(
-                      width: double.infinity, height: 20, color: Colors.white),
-                  const SizedBox(height: 8),
-                  Container(width: 200, height: 16, color: Colors.white),
-                ],
+  Widget _buildBody(BlogProvider provider, ThemeData theme) {
+    if (provider.blogsLoading) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 36,
+              height: 36,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: theme.colorScheme.primary,
               ),
             ),
+            const SizedBox(height: 20),
+            Text(
+              'Loading blogs...',
+              style: TextStyle(
+                color: theme.colorScheme.onSurface.withOpacity(0.5),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (provider.error != null && provider.blogs.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Icon(Icons.wifi_off_rounded,
+                    size: 40, color: Colors.red),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Something went wrong',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                provider.error!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.5),
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                onPressed: () => provider.loadBlogs(),
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('Try Again'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(160, 44),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (provider.blogs.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Icon(
+                  Icons.article_outlined,
+                  size: 48,
+                  color: theme.colorScheme.primary.withOpacity(0.4),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'No blogs yet',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Be the first to share something amazing!',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.5),
+                ),
+              ),
+              const SizedBox(height: 28),
+              ElevatedButton.icon(
+                onPressed: () => context.push('/create'),
+                icon: const Icon(Icons.edit_rounded, size: 18),
+                label: const Text('Write a Blog'),
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(180, 48),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => provider.loadBlogs(),
+      color: theme.colorScheme.primary,
+      child: ListView.builder(
+        padding: const EdgeInsets.only(top: 12, bottom: 100),
+        itemCount: provider.blogs.length,
+        itemBuilder: (context, index) {
+          return _BlogCard(
+            blog: provider.blogs[index],
+            onTap: () => context.push('/blog/${provider.blogs[index].id}'),
           );
         },
       ),
@@ -235,99 +285,134 @@ class _BlogListScreenState extends State<BlogListScreen> {
   }
 }
 
+// ═══════════════════════════════════════════
+//  BLOG CARD
+// ═══════════════════════════════════════════
 class _BlogCard extends StatelessWidget {
   final BlogModel blog;
-  const _BlogCard({required this.blog});
+  final VoidCallback onTap;
+
+  const _BlogCard({required this.blog, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => context.push('/blog/${blog.id}'),
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (blog.imageUrl != null)
-              CachedNetworkImage(
-                imageUrl: blog.imageUrl!,
-                height: 180,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                memCacheHeight: 360,
-                placeholder: (_, __) => Container(
+            // Image
+            if (blog.imageUrl.isNotEmpty)
+              ClipRRect(
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
+                child: Image.network(
+                  blog.imageUrl,
                   height: 180,
-                  color: Colors.grey.shade200,
-                  child: const Center(child: CircularProgressIndicator()),
-                ),
-                errorWidget: (_, __, ___) => Container(
-                  height: 180,
-                  color: Colors.grey.shade200,
-                  child: const Icon(Icons.broken_image, size: 48),
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 180,
+                    color: theme.colorScheme.primary.withOpacity(0.05),
+                    child: Icon(
+                      Icons.image_outlined,
+                      size: 40,
+                      color: theme.colorScheme.onSurface.withOpacity(0.15),
+                    ),
+                  ),
                 ),
               ),
+
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Title
                   Text(
                     blog.title,
-                    style: Theme.of(context).textTheme.titleLarge,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      height: 1.3,
+                    ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 8),
+
+                  // Preview
                   Text(
-                    blog.excerpt,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    maxLines: 3,
+                    blog.preview(maxLength: 100),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurface.withOpacity(0.55),
+                      height: 1.5,
+                    ),
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
+
+                  // Author row
                   Row(
                     children: [
                       CircleAvatar(
-                        radius: 16,
-                        backgroundColor: Colors.grey.shade200,
-                        backgroundImage: blog.author?.avatarUrl != null
-                            ? CachedNetworkImageProvider(
-                                blog.author!.avatarUrl!)
-                            : null,
-                        child: blog.author?.avatarUrl == null
+                        radius: 14,
+                        backgroundColor:
+                            theme.colorScheme.primary.withOpacity(0.1),
+                        backgroundImage:
+                            blog.author?.avatarUrl.isNotEmpty == true
+                                ? NetworkImage(blog.author!.avatarUrl)
+                                : null,
+                        child: blog.author?.avatarUrl.isEmpty != false
                             ? Text(
-                                (blog.author?.displayNameOrEmail ?? '?')[0]
-                                    .toUpperCase(),
-                                style: const TextStyle(fontSize: 14),
+                                blog.author?.initials ?? '?',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.colorScheme.primary,
+                                ),
                               )
                             : null,
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              blog.author?.displayNameOrEmail ?? 'Unknown',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                            if (blog.createdAt != null)
-                              Text(
-                                timeago.format(blog.createdAt!),
-                                style: Theme.of(context).textTheme.bodySmall,
+                              blog.author?.nameOrEmail ?? 'Unknown',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              _formatDate(blog.createdAt),
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurface
+                                    .withOpacity(0.4),
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                      Icon(Icons.comment_outlined,
-                          size: 16, color: Colors.grey.shade600),
-                      const SizedBox(width: 4),
-                      Text('${blog.commentCount}',
-                          style: Theme.of(context).textTheme.bodySmall),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.arrow_forward_rounded,
+                          size: 16,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -337,5 +422,22 @@ class _BlogCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _formatDate(String dateStr) {
+    try {
+      final date = DateTime.parse(dateStr);
+      final now = DateTime.now();
+      final diff = now.difference(date);
+
+      if (diff.inMinutes < 1) return 'Just now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+      if (diff.inHours < 24) return '${diff.inHours}h ago';
+      if (diff.inDays < 7) return '${diff.inDays}d ago';
+
+      return DateFormat('MMM dd, yyyy').format(date);
+    } catch (_) {
+      return dateStr;
+    }
   }
 }
