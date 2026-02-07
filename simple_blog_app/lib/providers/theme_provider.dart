@@ -1,10 +1,14 @@
-// theme_provider.dart
-// Theme state management (light/dark mode)
-//
-// This file will define:
-// - ThemeProvider class (extends ChangeNotifier)
-// - Current theme mode (light/dark/system)
-// - toggleTheme() method
-// - Persist theme preference to SharedPreferences
-//
-// React equivalent: ThemeContext with localStorage persistence
+import 'package:flutter/material.dart';
+
+class ThemeProvider extends ChangeNotifier {
+  ThemeMode _themeMode = ThemeMode.system;
+
+  ThemeMode get themeMode => _themeMode;
+  bool get isDarkMode => _themeMode == ThemeMode.dark;
+
+  void toggleTheme() {
+    _themeMode =
+        _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+    notifyListeners();
+  }
+}
