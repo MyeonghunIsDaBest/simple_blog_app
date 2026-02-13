@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../providers/blog_provider.dart';
+import '../../widgets/horizontal_scrollable_list.dart';
 import '../../widgets/responsive_layout.dart';
 
 class EditBlogScreen extends StatefulWidget {
@@ -18,7 +19,7 @@ class EditBlogScreen extends StatefulWidget {
 }
 
 class _EditBlogScreenState extends State<EditBlogScreen> {
-  static const int _maxImages = 5;
+  static const int _maxImages = 10;
   final _formKey = GlobalKey<FormState>();
   final _titleCtrl = TextEditingController();
   final _contentCtrl = TextEditingController();
@@ -219,138 +220,58 @@ class _EditBlogScreenState extends State<EditBlogScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // Images
-                SizedBox(
+                HorizontalScrollableList(
                   height: 120,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _totalImageCount + (_remainingSlots > 0 ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      // Existing images first
-                      if (index < _existingImageUrls.length) {
-                        return Container(
-                          width: 120,
-                          margin: const EdgeInsets.only(right: 10),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(14),
-                                child: Image.network(
-                                  _existingImageUrls[index],
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    color: theme.colorScheme.primary
-                                        .withOpacity(0.1),
-                                    child: Icon(
-                                      Icons.image_not_supported_outlined,
-                                      color: theme.colorScheme.onSurface
-                                          .withOpacity(0.15),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              Positioned(
-                                top: 6,
-                                right: 6,
-                                child: GestureDetector(
-                                  onTap: () => setState(() {
-                                    _existingImageUrls.removeAt(index);
-                                  }),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.6),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Icon(Icons.close_rounded,
-                                        size: 14, color: Colors.white),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-
-                      // New images
-                      final newIndex = index - _existingImageUrls.length;
-                      if (newIndex < _newImageBytesList.length) {
-                        return Container(
-                          width: 120,
-                          margin: const EdgeInsets.only(right: 10),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(14),
-                                child: Image.memory(
-                                  _newImageBytesList[newIndex],
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                              Positioned(
-                                top: 6,
-                                right: 6,
-                                child: GestureDetector(
-                                  onTap: () => setState(() {
-                                    _newImageBytesList.removeAt(newIndex);
-                                    _newImageExts.removeAt(newIndex);
-                                  }),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.6),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Icon(Icons.close_rounded,
-                                        size: 14, color: Colors.white),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-
-                      // "Add" button
-                      return GestureDetector(
-                        onTap: _pickImage,
-                        child: Container(
-                          width: 120,
-                          margin: const EdgeInsets.only(right: 10),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primary.withOpacity(0.04),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color:
-                                  theme.colorScheme.primary.withOpacity(0.15),
+                  spacing: 10,
+                  children: [
+                    // Existing images
+                    ..._existingImageUrls.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      return HorizontalImageItem(
+                        width: 120,
+                        borderRadius: BorderRadius.circular(14),
+                        image: Image.network(
+                          _existingImageUrls[index],
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: theme.colorScheme.primary.withOpacity(0.1),
+                            child: Icon(
+                              Icons.image_not_supported_outlined,
+                              color: theme.colorScheme.onSurface.withOpacity(0.15),
                             ),
                           ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.add_photo_alternate_outlined,
-                                size: 32,
-                                color:
-                                    theme.colorScheme.primary.withOpacity(0.4),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                '$_totalImageCount/$_maxImages',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: theme.colorScheme.primary
-                                      .withOpacity(0.5),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
                         ),
+                        onDelete: () => setState(() {
+                          _existingImageUrls.removeAt(index);
+                        }),
                       );
-                    },
-                  ),
+                    }),
+                    // New images
+                    ..._newImageBytesList.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      return HorizontalImageItem(
+                        width: 120,
+                        borderRadius: BorderRadius.circular(14),
+                        image: Image.memory(
+                          _newImageBytesList[index],
+                          fit: BoxFit.cover,
+                        ),
+                        onDelete: () => setState(() {
+                          _newImageBytesList.removeAt(index);
+                          _newImageExts.removeAt(index);
+                        }),
+                      );
+                    }),
+                    // Add image button
+                    if (_remainingSlots > 0)
+                      AddImageButton(
+                        width: 120,
+                        height: 120,
+                        borderRadius: BorderRadius.circular(14),
+                        label: '$_totalImageCount/$_maxImages',
+                        onTap: _pickImage,
+                      ),
+                  ],
                 ),
 
                 const SizedBox(height: 24),

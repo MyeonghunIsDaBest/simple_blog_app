@@ -304,6 +304,45 @@ class BlogProvider with ChangeNotifier {
     }
   }
 
+  /// Update comment with text and images
+  Future<bool> updateComment({
+    required String commentId,
+    required String content,
+    List<String>? existingImageUrls,
+    List<Uint8List>? newImageBytesList,
+    List<String>? newImageExts,
+  }) async {
+    _actionLoading = true;
+    notifyListeners();
+
+    try {
+      final updated = await _service.updateComment(
+        commentId: commentId,
+        content: content,
+        existingImageUrls: existingImageUrls,
+        newImageBytesList: newImageBytesList,
+        newImageExts: newImageExts,
+      );
+
+      if (updated != null) {
+        // Update in comments list
+        final index = _comments.indexWhere((c) => c.id == commentId);
+        if (index != -1) {
+          _comments[index] = updated;
+        }
+      }
+
+      _actionLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      _actionLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   // ══════════════════════════════════════════
   //  LIKE OPERATIONS
   // ══════════════════════════════════════════

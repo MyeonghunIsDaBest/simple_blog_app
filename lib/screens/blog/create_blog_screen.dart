@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../providers/blog_provider.dart';
+import '../../widgets/horizontal_scrollable_list.dart';
 import '../../widgets/responsive_layout.dart';
 
 class CreateBlogScreen extends StatefulWidget {
@@ -16,7 +17,7 @@ class CreateBlogScreen extends StatefulWidget {
 }
 
 class _CreateBlogScreenState extends State<CreateBlogScreen> {
-  static const int _maxImages = 5;
+  static const int _maxImages = 10;
   final _formKey = GlobalKey<FormState>();
   final _titleCtrl = TextEditingController();
   final _contentCtrl = TextEditingController();
@@ -224,89 +225,36 @@ class _CreateBlogScreenState extends State<CreateBlogScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // Images
-                SizedBox(
+                HorizontalScrollableList(
                   height: 120,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount:
-                        _imageBytesList.length + (_remainingSlots > 0 ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index == _imageBytesList.length) {
-                        return GestureDetector(
-                          onTap: _pickImage,
-                          child: Container(
-                            width: 120,
-                            margin: const EdgeInsets.only(right: 10),
-                            decoration: BoxDecoration(
-                              color:
-                                  theme.colorScheme.primary.withOpacity(0.04),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color:
-                                    theme.colorScheme.primary.withOpacity(0.15),
-                              ),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.add_photo_alternate_outlined,
-                                  size: 32,
-                                  color: theme.colorScheme.primary
-                                      .withOpacity(0.4),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  '${_imageBytesList.length}/$_maxImages',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: theme.colorScheme.primary
-                                        .withOpacity(0.5),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }
-                      return Container(
+                  spacing: 10,
+                  children: [
+                    // Image items
+                    ..._imageBytesList.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      return HorizontalImageItem(
                         width: 120,
-                        margin: const EdgeInsets.only(right: 10),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(14),
-                              child: Image.memory(
-                                _imageBytesList[index],
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                            Positioned(
-                              top: 6,
-                              right: 6,
-                              child: GestureDetector(
-                                onTap: () => setState(() {
-                                  _imageBytesList.removeAt(index);
-                                  _imageExts.removeAt(index);
-                                }),
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withOpacity(0.6),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(Icons.close_rounded,
-                                      size: 14, color: Colors.white),
-                                ),
-                              ),
-                            ),
-                          ],
+                        borderRadius: BorderRadius.circular(14),
+                        image: Image.memory(
+                          _imageBytesList[index],
+                          fit: BoxFit.cover,
                         ),
+                        onDelete: () => setState(() {
+                          _imageBytesList.removeAt(index);
+                          _imageExts.removeAt(index);
+                        }),
                       );
-                    },
-                  ),
+                    }),
+                    // Add image button
+                    if (_remainingSlots > 0)
+                      AddImageButton(
+                        width: 120,
+                        height: 120,
+                        borderRadius: BorderRadius.circular(14),
+                        label: '${_imageBytesList.length}/$_maxImages',
+                        onTap: _pickImage,
+                      ),
+                  ],
                 ),
 
                 const SizedBox(height: 24),

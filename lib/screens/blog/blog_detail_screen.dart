@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../../models/comment_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/blog_provider.dart';
+import '../../widgets/horizontal_scrollable_list.dart';
 import '../../widgets/image_carousel.dart';
 import '../../widgets/responsive_layout.dart';
 
@@ -23,7 +24,7 @@ class BlogDetailScreen extends StatefulWidget {
 }
 
 class _BlogDetailScreenState extends State<BlogDetailScreen> {
-  static const int _maxCommentImages = 3;
+  static const int _maxCommentImages = 10;
   final _commentCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   final _commentScrollCtrl = ScrollController();
@@ -198,6 +199,231 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
         }
       });
     }
+  }
+
+  void _showEditCommentDialog(CommentModel comment) {
+    final editController = TextEditingController(text: comment.content);
+    final List<String> existingUrls = List<String>.from(comment.imageUrls);
+    final List<Uint8List> newImageBytes = [];
+    final List<String> newImageExts = [];
+    const int maxImages = 10;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final totalImages = existingUrls.length + newImageBytes.length;
+          final remainingSlots = maxImages - totalImages;
+
+          Future<void> pickImage() async {
+            if (remainingSlots <= 0) return;
+            final picker = ImagePicker();
+            Navigator.pop(context); // Close bottom sheet
+
+            final picked = await picker.pickMultiImage(
+              maxWidth: 1024,
+              maxHeight: 1024,
+              imageQuality: 75,
+            );
+
+            if (picked.isNotEmpty) {
+              final take = picked.take(remainingSlots);
+              for (final p in take) {
+                final bytes = await p.readAsBytes();
+                newImageBytes.add(bytes);
+                newImageExts.add(p.name.split('.').last);
+              }
+              setDialogState(() {});
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Edit Comment'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Existing images
+                  if (existingUrls.isNotEmpty) ...[
+                    Text(
+                      'Current Images',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    HorizontalScrollableList(
+                      height: 70,
+                      spacing: 8,
+                      children: existingUrls.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final url = entry.value;
+                        return HorizontalImageItem(
+                          width: 70,
+                          borderRadius: BorderRadius.circular(8),
+                          image: Image.network(
+                            url,
+                            fit: BoxFit.cover,
+                          ),
+                          onDelete: () => setDialogState(() {
+                            existingUrls.removeAt(index);
+                          }),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  // New images
+                  if (newImageBytes.isNotEmpty) ...[
+                    Text(
+                      'New Images',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    HorizontalScrollableList(
+                      height: 70,
+                      spacing: 8,
+                      children: newImageBytes.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        return HorizontalImageItem(
+                          width: 70,
+                          borderRadius: BorderRadius.circular(8),
+                          image: Image.memory(
+                            newImageBytes[index],
+                            fit: BoxFit.cover,
+                          ),
+                          onDelete: () => setDialogState(() {
+                            newImageBytes.removeAt(index);
+                            newImageExts.removeAt(index);
+                          }),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  // Add image button
+                  if (remainingSlots > 0)
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        showModalBottomSheet(
+                          context: context,
+                          builder: (ctx) => SafeArea(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ListTile(
+                                  leading:
+                                      const Icon(Icons.photo_library_rounded),
+                                  title: Text('Gallery ($totalImages/$maxImages)'),
+                                  onTap: pickImage,
+                                ),
+                                ListTile(
+                                  leading: const Icon(Icons.camera_alt_rounded),
+                                  title: const Text('Camera'),
+                                  onTap: () async {
+                                    Navigator.pop(ctx);
+                                    final picker = ImagePicker();
+                                    final p = await picker.pickImage(
+                                      source: ImageSource.camera,
+                                      maxWidth: 1024,
+                                      maxHeight: 1024,
+                                      imageQuality: 75,
+                                    );
+                                    if (p != null) {
+                                      final bytes = await p.readAsBytes();
+                                      setDialogState(() {
+                                        newImageBytes.add(bytes);
+                                        newImageExts.add(p.name.split('.').last);
+                                      });
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.add_photo_alternate_outlined),
+                      label: Text('Add Images ($totalImages/$maxImages)'),
+                    ),
+                  const SizedBox(height: 12),
+                  // Text field
+                  TextField(
+                    controller: editController,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: 'Comment',
+                      border: OutlineInputBorder(),
+                    ),
+                    autofocus: true,
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  editController.dispose();
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  final newContent = editController.text.trim();
+                  final messenger = ScaffoldMessenger.of(context);
+                  final navigator = Navigator.of(dialogContext);
+                  final provider = context.read<BlogProvider>();
+
+                  if (newContent.isEmpty &&
+                      existingUrls.isEmpty &&
+                      newImageBytes.isEmpty) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('Comment cannot be empty'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    return;
+                  }
+
+                  final success = await provider.updateComment(
+                    commentId: comment.id,
+                    content: newContent.isNotEmpty ? newContent : '📷',
+                    existingImageUrls:
+                        existingUrls.isNotEmpty ? existingUrls : null,
+                    newImageBytesList:
+                        newImageBytes.isNotEmpty ? newImageBytes : null,
+                    newImageExts:
+                        newImageExts.isNotEmpty ? newImageExts : null,
+                  );
+
+                  editController.dispose();
+                  if (mounted) {
+                    navigator.pop();
+                    if (success) {
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Comment updated'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    } else {
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Failed to update comment'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   @override
@@ -669,7 +895,26 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
                   ],
                 ),
               ),
-              if (isOwner)
+              if (isOwner) ...[
+                // Edit button
+                Container(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    color: theme.colorScheme.primary.withOpacity(0.7),
+                    onPressed: () => _showEditCommentDialog(comment),
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Delete button
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.red.withOpacity(0.06),
@@ -712,6 +957,7 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
                     padding: EdgeInsets.zero,
                   ),
                 ),
+              ],
             ],
           ),
           const SizedBox(height: 12),
@@ -754,47 +1000,24 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
           if (_commentImageBytesList.isNotEmpty)
             Container(
               margin: const EdgeInsets.only(bottom: 10),
-              height: 70,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: _commentImageBytesList.length,
-                itemBuilder: (context, index) {
-                  return Container(
+              child: HorizontalScrollableList(
+                height: 70,
+                spacing: 8,
+                children: _commentImageBytesList.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  return HorizontalImageItem(
                     width: 70,
-                    margin: const EdgeInsets.only(right: 8),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: Image.memory(
-                            _commentImageBytesList[index],
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        Positioned(
-                          top: 4,
-                          right: 4,
-                          child: GestureDetector(
-                            onTap: () => setState(() {
-                              _commentImageBytesList.removeAt(index);
-                              _commentImageExts.removeAt(index);
-                            }),
-                            child: Container(
-                              padding: const EdgeInsets.all(3),
-                              decoration: const BoxDecoration(
-                                color: Colors.red,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.close,
-                                  size: 10, color: Colors.white),
-                            ),
-                          ),
-                        ),
-                      ],
+                    borderRadius: BorderRadius.circular(10),
+                    image: Image.memory(
+                      _commentImageBytesList[index],
+                      fit: BoxFit.cover,
                     ),
+                    onDelete: () => setState(() {
+                      _commentImageBytesList.removeAt(index);
+                      _commentImageExts.removeAt(index);
+                    }),
                   );
-                },
+                }).toList(),
               ),
             ),
           Row(

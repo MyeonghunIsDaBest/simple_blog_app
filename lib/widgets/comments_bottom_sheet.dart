@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../models/comment_model.dart';
 import '../providers/blog_provider.dart';
+import 'horizontal_scrollable_list.dart';
 import 'image_carousel.dart';
 
 class CommentsBottomSheet extends StatefulWidget {
@@ -44,7 +45,7 @@ class CommentsBottomSheet extends StatefulWidget {
 }
 
 class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
-  static const int _maxImages = 3;
+  static const int _maxImages = 10;
   late TextEditingController _commentController;
   final List<Uint8List> _imageBytesList = [];
   final List<String> _imageExts = [];
@@ -215,21 +216,22 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                               children: [
                                 CircleAvatar(
                                   radius: 16,
-                                  backgroundImage: comment.author?.avatarUrl
-                                          .isNotEmpty ==
-                                      true
-                                    ? NetworkImage(comment.author!.avatarUrl)
-                                    : null,
-                                  child: comment.author?.avatarUrl.isEmpty ?? true
+                                  backgroundImage: comment
+                                              .author?.avatarUrl.isNotEmpty ==
+                                          true
+                                      ? NetworkImage(comment.author!.avatarUrl)
+                                      : null,
+                                  child: comment.author?.avatarUrl.isEmpty ??
+                                          true
                                       ? Text(
                                           comment.author?.displayName
-                                                  .isNotEmpty ==
-                                              true
-                                          ? comment.author!.displayName[0]
-                                          : comment.author?.email
-                                                  .substring(0, 1)
-                                                  .toUpperCase() ??
-                                              '?',
+                                                      .isNotEmpty ==
+                                                  true
+                                              ? comment.author!.displayName[0]
+                                              : comment.author?.email
+                                                      .substring(0, 1)
+                                                      .toUpperCase() ??
+                                                  '?',
                                         )
                                       : null,
                                 ),
@@ -240,7 +242,7 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        comment.author?.displayNameOrEmail ??
+                                        comment.author?.nameOrEmail ??
                                             'Anonymous',
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w600,
@@ -299,63 +301,38 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                 if (_imageBytesList.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
-                    child: SizedBox(
+                    child: HorizontalScrollableList(
                       height: 70,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _imageBytesList.length,
-                        itemBuilder: (context, index) {
-                          return Container(
-                            width: 70,
-                            margin: const EdgeInsets.only(right: 8),
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.memory(
-                                    _imageBytesList[index],
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 4,
-                                  right: 4,
-                                  child: GestureDetector(
-                                    onTap: () => setState(() {
-                                      _imageBytesList.removeAt(index);
-                                      _imageExts.removeAt(index);
-                                    }),
-                                    child: Container(
-                                      decoration: const BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: Colors.black54,
-                                      ),
-                                      padding: const EdgeInsets.all(3),
-                                      child: const Icon(
-                                        Icons.close,
-                                        color: Colors.white,
-                                        size: 12,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+                      spacing: 8,
+                      children: _imageBytesList.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        return HorizontalImageItem(
+                          width: 70,
+                          borderRadius: BorderRadius.circular(8),
+                          image: Image.memory(
+                            _imageBytesList[index],
+                            fit: BoxFit.cover,
+                          ),
+                          onDelete: () => setState(() {
+                            _imageBytesList.removeAt(index);
+                            _imageExts.removeAt(index);
+                          }),
+                        );
+                      }).toList(),
                     ),
                   ),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     GestureDetector(
-                      onTap: _isSubmitting || _remainingSlots <= 0 ? null : _pickImage,
+                      onTap: _isSubmitting || _remainingSlots <= 0
+                          ? null
+                          : _pickImage,
                       child: Container(
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Theme.of(context).primaryColor.withOpacity(0.1),
+                          color:
+                              Theme.of(context).primaryColor.withOpacity(0.1),
                         ),
                         padding: const EdgeInsets.all(10),
                         child: Icon(
@@ -420,8 +397,7 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                               )
                             : Icon(
                                 Icons.send,
-                                color:
-                                    Theme.of(context).colorScheme.onPrimary,
+                                color: Theme.of(context).colorScheme.onPrimary,
                                 size: 18,
                               ),
                       ),

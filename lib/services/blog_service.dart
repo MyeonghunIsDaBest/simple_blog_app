@@ -321,6 +321,44 @@ class BlogService {
     await _client.from('comments').delete().eq('id', id);
   }
 
+  /// Update a comment with text and images
+  Future<CommentModel?> updateComment({
+    required String commentId,
+    required String content,
+    List<String>? existingImageUrls,
+    List<Uint8List>? newImageBytesList,
+    List<String>? newImageExts,
+  }) async {
+    // Start with existing images that user kept
+    List<String> finalImageUrls = existingImageUrls ?? [];
+
+    // Upload and append new images
+    if (newImageBytesList != null &&
+        newImageExts != null &&
+        newImageBytesList.isNotEmpty) {
+      final newUrls = await uploadCommentImages(
+        imageBytesList: newImageBytesList,
+        imageExts: newImageExts,
+      );
+      finalImageUrls = [...finalImageUrls, ...newUrls];
+    }
+
+    final response = await _client
+        .from('comments')
+        .update({
+          'content': content,
+          'image_urls': finalImageUrls,
+        })
+        .eq('id', commentId)
+        .select('''
+          *,
+          profiles!comments_user_id_fkey(*)
+        ''')
+        .single();
+
+    return CommentModel.fromJson(Map<String, dynamic>.from(response));
+  }
+
   // ══════════════════════════════════════════
   //  LIKES
   // ══════════════════════════════════════════
