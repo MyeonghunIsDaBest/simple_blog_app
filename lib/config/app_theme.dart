@@ -55,7 +55,7 @@ class AppTheme {
           borderRadius: BorderRadius.circular(16),
           side: const BorderSide(color: Color(0xFFE8E8EA), width: 1),
         ),
-        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+        margin: EdgeInsets.zero,
       ),
 
       // ── Input ──
@@ -269,7 +269,7 @@ class AppTheme {
           borderRadius: BorderRadius.circular(16),
           side: const BorderSide(color: borderWarm, width: 1),
         ),
-        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+        margin: EdgeInsets.zero,
       ),
 
       // ── Input ──

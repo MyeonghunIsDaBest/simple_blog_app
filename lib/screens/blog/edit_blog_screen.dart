@@ -6,8 +6,11 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../providers/blog_provider.dart';
+import '../../widgets/feed_column.dart';
 import '../../widgets/horizontal_scrollable_list.dart';
 import '../../widgets/responsive_layout.dart';
+import '../../widgets/sidebar_nav.dart';
+import '../../widgets/sticky_header.dart';
 
 class EditBlogScreen extends StatefulWidget {
   final String blogId;
@@ -155,20 +158,194 @@ class _EditBlogScreenState extends State<EditBlogScreen> {
     }
   }
 
+  Widget _buildForm(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Images
+            HorizontalScrollableList(
+              height: 120,
+              spacing: 10,
+              children: [
+                // Existing images
+                ..._existingImageUrls.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  return HorizontalImageItem(
+                    width: 120,
+                    borderRadius: BorderRadius.circular(14),
+                    image: Image.network(
+                      _existingImageUrls[index],
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: theme.colorScheme.primary.withOpacity(0.1),
+                        child: Icon(
+                          Icons.image_not_supported_outlined,
+                          color:
+                              theme.colorScheme.onSurface.withOpacity(0.15),
+                        ),
+                      ),
+                    ),
+                    onDelete: () => setState(() {
+                      _existingImageUrls.removeAt(index);
+                    }),
+                  );
+                }),
+                // New images
+                ..._newImageBytesList.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  return HorizontalImageItem(
+                    width: 120,
+                    borderRadius: BorderRadius.circular(14),
+                    image: Image.memory(
+                      _newImageBytesList[index],
+                      fit: BoxFit.cover,
+                    ),
+                    onDelete: () => setState(() {
+                      _newImageBytesList.removeAt(index);
+                      _newImageExts.removeAt(index);
+                    }),
+                  );
+                }),
+                // Add image button
+                if (_remainingSlots > 0)
+                  AddImageButton(
+                    width: 120,
+                    height: 120,
+                    borderRadius: BorderRadius.circular(14),
+                    label: '$_totalImageCount/$_maxImages',
+                    onTap: _pickImage,
+                  ),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+
+            TextFormField(
+              controller: _titleCtrl,
+              maxLines: 3,
+              minLines: 1,
+              textCapitalization: TextCapitalization.sentences,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+              decoration: InputDecoration(
+                hintText: 'Blog title...',
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                hintStyle: theme.textTheme.headlineSmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withOpacity(0.25),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Required';
+                return null;
+              },
+            ),
+
+            Divider(color: theme.dividerTheme.color, height: 1),
+            const SizedBox(height: 16),
+
+            TextFormField(
+              controller: _contentCtrl,
+              maxLines: null,
+              minLines: 15,
+              textCapitalization: TextCapitalization.sentences,
+              style: theme.textTheme.bodyLarge?.copyWith(height: 1.8),
+              decoration: InputDecoration(
+                hintText: 'Content...',
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                hintStyle: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.25),
+                ),
+              ),
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Required';
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<BlogProvider>();
     final theme = Theme.of(context);
+    final hasSidebar = showSidebar(context);
 
     if (!_loaded) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Edit Blog')),
-        body: const Center(
-          child: CircularProgressIndicator(strokeWidth: 2),
+        appBar: hasSidebar ? null : AppBar(title: const Text('Edit Blog')),
+        body: Row(
+          children: [
+            if (hasSidebar) const SidebarNav(currentIndex: -1),
+            const Expanded(
+              child: Center(
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ],
         ),
       );
     }
 
+    final updateButton = ElevatedButton(
+      onPressed: provider.actionLoading ? null : _handleUpdate,
+      style: ElevatedButton.styleFrom(
+        minimumSize: const Size(100, 40),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      child: provider.actionLoading
+          ? const SizedBox(
+              height: 18,
+              width: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : const Text('Update'),
+    );
+
+    if (hasSidebar) {
+      return Scaffold(
+        body: Row(
+          children: [
+            const SidebarNav(currentIndex: -1),
+            Expanded(
+              child: FeedColumn(
+                maxWidth: 700,
+                child: Column(
+                  children: [
+                    StickyHeader(
+                      title: 'Edit Blog',
+                      showBackButton: true,
+                      onBack: () => context.pop(),
+                      actions: [updateButton],
+                    ),
+                    Expanded(child: _buildForm(theme)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Mobile
     return Scaffold(
       appBar: AppBar(
         leading: Padding(
@@ -188,146 +365,11 @@ class _EditBlogScreenState extends State<EditBlogScreen> {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: ElevatedButton(
-              onPressed: provider.actionLoading ? null : _handleUpdate,
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(100, 40),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: provider.actionLoading
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('Update'),
-            ),
+            child: updateButton,
           ),
         ],
       ),
-      body: ResponsiveCenter(
-        maxWidth: 700,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Images
-                HorizontalScrollableList(
-                  height: 120,
-                  spacing: 10,
-                  children: [
-                    // Existing images
-                    ..._existingImageUrls.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      return HorizontalImageItem(
-                        width: 120,
-                        borderRadius: BorderRadius.circular(14),
-                        image: Image.network(
-                          _existingImageUrls[index],
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: theme.colorScheme.primary.withOpacity(0.1),
-                            child: Icon(
-                              Icons.image_not_supported_outlined,
-                              color: theme.colorScheme.onSurface.withOpacity(0.15),
-                            ),
-                          ),
-                        ),
-                        onDelete: () => setState(() {
-                          _existingImageUrls.removeAt(index);
-                        }),
-                      );
-                    }),
-                    // New images
-                    ..._newImageBytesList.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      return HorizontalImageItem(
-                        width: 120,
-                        borderRadius: BorderRadius.circular(14),
-                        image: Image.memory(
-                          _newImageBytesList[index],
-                          fit: BoxFit.cover,
-                        ),
-                        onDelete: () => setState(() {
-                          _newImageBytesList.removeAt(index);
-                          _newImageExts.removeAt(index);
-                        }),
-                      );
-                    }),
-                    // Add image button
-                    if (_remainingSlots > 0)
-                      AddImageButton(
-                        width: 120,
-                        height: 120,
-                        borderRadius: BorderRadius.circular(14),
-                        label: '$_totalImageCount/$_maxImages',
-                        onTap: _pickImage,
-                      ),
-                  ],
-                ),
-
-                const SizedBox(height: 24),
-
-                TextFormField(
-                  controller: _titleCtrl,
-                  maxLines: 3,
-                  minLines: 1,
-                  textCapitalization: TextCapitalization.sentences,
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'Blog title...',
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    hintStyle: theme.textTheme.headlineSmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.25),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Required';
-                    return null;
-                  },
-                ),
-
-                Divider(color: theme.dividerTheme.color, height: 1),
-                const SizedBox(height: 16),
-
-                TextFormField(
-                  controller: _contentCtrl,
-                  maxLines: null,
-                  minLines: 15,
-                  textCapitalization: TextCapitalization.sentences,
-                  style: theme.textTheme.bodyLarge?.copyWith(height: 1.8),
-                  decoration: InputDecoration(
-                    hintText: 'Content...',
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    hintStyle: TextStyle(
-                      color: theme.colorScheme.onSurface.withOpacity(0.25),
-                    ),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Required';
-                    return null;
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      body: _buildForm(theme),
     );
   }
 }

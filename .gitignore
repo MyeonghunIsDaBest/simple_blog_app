@@ -50,6 +50,7 @@ app.*.map.json
 
 lesson_plan.md
 project_status.md
+flutter_dark_lesson.md
 .vercel
 
 .claude

@@ -7,9 +7,12 @@ class AppBreakpoints {
   static const double mobile = 600;
   static const double tablet = 900;
   static const double desktop = 1200;
+  static const double sidebarExpanded = 240;
+  static const double sidebarCollapsed = 72;
+  static const double feedMaxWidth = 700;
 }
 
-/// Wraps content with max width constraint — the #1 improvement
+/// Wraps content with max width constraint
 class ResponsiveCenter extends StatelessWidget {
   final Widget child;
   final double maxWidth;
@@ -44,6 +47,16 @@ bool isWideScreen(BuildContext context) {
 /// Returns true if screen is desktop-width
 bool isDesktop(BuildContext context) {
   return MediaQuery.of(context).size.width >= AppBreakpoints.tablet;
+}
+
+/// Returns true if sidebar should be shown (tablet+)
+bool showSidebar(BuildContext context) {
+  return MediaQuery.of(context).size.width >= AppBreakpoints.tablet;
+}
+
+/// Returns true if sidebar should show labels (desktop+)
+bool isSidebarExpanded(BuildContext context) {
+  return MediaQuery.of(context).size.width >= AppBreakpoints.desktop;
 }
 
 /// Responsive grid column count based on screen width

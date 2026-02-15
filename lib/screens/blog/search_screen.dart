@@ -5,9 +5,9 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../models/blog_model.dart';
 import '../../providers/blog_provider.dart';
-import '../../widgets/bottom_nav_bar.dart';
-import '../../widgets/hover_card.dart';
-import '../../widgets/responsive_layout.dart';
+import '../../widgets/app_shell.dart';
+import '../../widgets/feed_column.dart';
+import '../../widgets/sticky_header.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -57,16 +57,13 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: TopNavBar(
-        currentIndex: 1,
-        title: 'Blog',
-      ),
-      bottomNavigationBar: const BottomNavBar(currentIndex: 1),
-      body: ResponsiveCenter(
-        maxWidth: 700,
+    return AppShell(
+      currentIndex: 1,
+      body: FeedColumn(
         child: Column(
           children: [
+            const StickyHeader(title: 'Search'),
+
             // Search input
             Padding(
               padding: const EdgeInsets.all(16),
@@ -155,115 +152,129 @@ class _SearchScreenState extends State<SearchScreen> {
                                 ],
                               ),
                             )
-                          : ListView.builder(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
+                          : ListView.separated(
+                              padding: EdgeInsets.zero,
                               itemCount: _searchResults.length,
+                              separatorBuilder: (_, __) => Divider(
+                                height: 1,
+                                color: theme.dividerTheme.color,
+                              ),
                               itemBuilder: (context, index) {
                                 final blog = _searchResults[index];
-                                return HoverCard(
-                                  onTap: () => context.push('/blog/${blog.id}'),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      if (blog.hasImages)
-                                        Stack(
-                                          children: [
-                                            ClipRRect(
-                                              borderRadius:
-                                                  const BorderRadius.vertical(
-                                                top: Radius.circular(16),
-                                              ),
-                                              child: Image.network(
-                                                blog.imageUrl,
-                                                height: 150,
-                                                width: double.infinity,
-                                                fit: BoxFit.cover,
-                                              ),
-                                            ),
-                                            if (blog.imageUrls.length > 1)
-                                              Positioned(
-                                                top: 8,
-                                                right: 8,
-                                                child: Container(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 4,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.black
-                                                        .withOpacity(0.6),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            10),
-                                                  ),
-                                                  child: Row(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      const Icon(
-                                                        Icons
-                                                            .photo_library_rounded,
-                                                        size: 12,
-                                                        color: Colors.white,
-                                                      ),
-                                                      const SizedBox(width: 4),
-                                                      Text(
-                                                        '${blog.imageUrls.length}',
-                                                        style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontSize: 11,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                      Padding(
-                                        padding: const EdgeInsets.all(12),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              blog.title,
-                                              style: theme.textTheme.titleSmall
-                                                  ?.copyWith(
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              blog.preview(maxLength: 80),
-                                              style: theme.textTheme.bodySmall
-                                                  ?.copyWith(
-                                                color: theme
-                                                    .colorScheme.onSurface
-                                                    .withOpacity(0.55),
-                                              ),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                return _SearchResultCard(
+                                  blog: blog,
+                                  onTap: () =>
+                                      context.push('/blog/${blog.id}'),
                                 );
                               },
                             ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchResultCard extends StatefulWidget {
+  final BlogModel blog;
+  final VoidCallback onTap;
+
+  const _SearchResultCard({required this.blog, required this.onTap});
+
+  @override
+  State<_SearchResultCard> createState() => _SearchResultCardState();
+}
+
+class _SearchResultCardState extends State<_SearchResultCard> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final blog = widget.blog;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          color: _hovering
+              ? theme.colorScheme.onSurface.withOpacity(0.02)
+              : Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                backgroundImage: blog.author?.avatarUrl.isNotEmpty == true
+                    ? NetworkImage(blog.author!.avatarUrl)
+                    : null,
+                child: blog.author?.avatarUrl.isEmpty != false
+                    ? Text(
+                        blog.author?.initials ?? '?',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.primary,
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      blog.author?.nameOrEmail ?? 'Unknown',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    if (blog.title.isNotEmpty)
+                      Text(
+                        blog.title,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    const SizedBox(height: 4),
+                    Text(
+                      blog.preview(maxLength: 100),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withOpacity(0.55),
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (blog.hasImages) ...[
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Image.network(
+                          blog.imageUrl,
+                          height: 150,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

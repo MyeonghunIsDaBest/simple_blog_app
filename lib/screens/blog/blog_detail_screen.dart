@@ -13,6 +13,8 @@ import '../../providers/blog_provider.dart';
 import '../../widgets/horizontal_scrollable_list.dart';
 import '../../widgets/image_carousel.dart';
 import '../../widgets/responsive_layout.dart';
+import '../../widgets/sidebar_nav.dart';
+import '../../widgets/sticky_header.dart';
 
 class BlogDetailScreen extends StatefulWidget {
   final String blogId;
@@ -434,61 +436,124 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
     final theme = Theme.of(context);
     final isOwner = blog?.userId == _currentUserId;
     final wide = isDesktop(context);
+    final hasSidebar = showSidebar(context);
 
     if (blogProvider.detailLoading) {
       return Scaffold(
-        appBar: AppBar(),
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 36,
-                height: 36,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  color: theme.colorScheme.primary,
+        appBar: hasSidebar ? null : AppBar(),
+        body: Row(
+          children: [
+            if (hasSidebar) const SidebarNav(currentIndex: -1),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Loading...',
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface.withOpacity(0.5),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 20),
-              Text(
-                'Loading...',
-                style: TextStyle(
-                  color: theme.colorScheme.onSurface.withOpacity(0.5),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }
 
     if (blog == null) {
       return Scaffold(
-        appBar: AppBar(),
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.article_outlined,
-                  size: 56,
-                  color: theme.colorScheme.onSurface.withOpacity(0.2)),
-              const SizedBox(height: 16),
-              const Text('Blog not found'),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () => context.go('/'),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(140, 44),
+        appBar: hasSidebar ? null : AppBar(),
+        body: Row(
+          children: [
+            if (hasSidebar) const SidebarNav(currentIndex: -1),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.article_outlined,
+                        size: 56,
+                        color: theme.colorScheme.onSurface.withOpacity(0.2)),
+                    const SizedBox(height: 16),
+                    const Text('Blog not found'),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: () => context.go('/'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(140, 44),
+                      ),
+                      child: const Text('Go Home'),
+                    ),
+                  ],
                 ),
-                child: const Text('Go Home'),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }
 
+    // Desktop with sidebar
+    if (hasSidebar) {
+      return Scaffold(
+        body: Row(
+          children: [
+            const SidebarNav(currentIndex: -1),
+            Expanded(
+              child: Column(
+                children: [
+                  StickyHeader(
+                    title: 'Post',
+                    showBackButton: true,
+                    onBack: () {
+                      blogProvider.clearCurrentBlog();
+                      context.go('/');
+                    },
+                    actions: [
+                      if (isOwner) ...[
+                        _HeaderIconButton(
+                          icon: Icons.edit_outlined,
+                          onTap: () => context.push('/edit/${blog.id}'),
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        _HeaderIconButton(
+                          icon: Icons.delete_outline_rounded,
+                          onTap: _handleDelete,
+                          color: Colors.red,
+                        ),
+                      ],
+                    ],
+                  ),
+                  Expanded(
+                    child: wide
+                        ? _buildDesktopLayout(
+                            blog, comments, theme, blogProvider)
+                        : _buildMobileLayout(
+                            blog, comments, theme, blogProvider),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Mobile without sidebar
     return Scaffold(
       appBar: AppBar(
         leading: Padding(
@@ -539,9 +604,7 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
           ],
         ],
       ),
-      body: wide
-          ? _buildDesktopLayout(blog, comments, theme, blogProvider)
-          : _buildMobileLayout(blog, comments, theme, blogProvider),
+      body: _buildMobileLayout(blog, comments, theme, blogProvider),
     );
   }
 
@@ -1176,6 +1239,48 @@ class _HoverEngagementState extends State<_HoverEngagement> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeaderIconButton extends StatefulWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final Color color;
+
+  const _HeaderIconButton({
+    required this.icon,
+    required this.onTap,
+    required this.color,
+  });
+
+  @override
+  State<_HeaderIconButton> createState() => _HeaderIconButtonState();
+}
+
+class _HeaderIconButtonState extends State<_HeaderIconButton> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: _hovering
+                ? widget.color.withOpacity(0.1)
+                : widget.color.withOpacity(0.06),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(widget.icon, size: 18, color: widget.color),
         ),
       ),
     );

@@ -6,8 +6,11 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../providers/blog_provider.dart';
+import '../../widgets/feed_column.dart';
 import '../../widgets/horizontal_scrollable_list.dart';
 import '../../widgets/responsive_layout.dart';
+import '../../widgets/sidebar_nav.dart';
+import '../../widgets/sticky_header.dart';
 
 class CreateBlogScreen extends StatefulWidget {
   const CreateBlogScreen({super.key});
@@ -147,11 +150,159 @@ class _CreateBlogScreenState extends State<CreateBlogScreen> {
     });
   }
 
+  Widget _buildForm(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Images
+            HorizontalScrollableList(
+              height: 120,
+              spacing: 10,
+              children: [
+                ..._imageBytesList.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  return HorizontalImageItem(
+                    width: 120,
+                    borderRadius: BorderRadius.circular(14),
+                    image: Image.memory(
+                      _imageBytesList[index],
+                      fit: BoxFit.cover,
+                    ),
+                    onDelete: () => setState(() {
+                      _imageBytesList.removeAt(index);
+                      _imageExts.removeAt(index);
+                    }),
+                  );
+                }),
+                if (_remainingSlots > 0)
+                  AddImageButton(
+                    width: 120,
+                    height: 120,
+                    borderRadius: BorderRadius.circular(14),
+                    label: '${_imageBytesList.length}/$_maxImages',
+                    onTap: _pickImage,
+                  ),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+
+            // Title
+            TextFormField(
+              controller: _titleCtrl,
+              maxLines: 3,
+              minLines: 1,
+              textCapitalization: TextCapitalization.sentences,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+              decoration: InputDecoration(
+                hintText: 'Give your blog a title...',
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                hintStyle: theme.textTheme.headlineSmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withOpacity(0.25),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) {
+                  return 'Title is required';
+                }
+                return null;
+              },
+            ),
+
+            Divider(color: theme.dividerTheme.color, height: 1),
+            const SizedBox(height: 16),
+
+            // Content
+            TextFormField(
+              controller: _contentCtrl,
+              maxLines: null,
+              minLines: 15,
+              textCapitalization: TextCapitalization.sentences,
+              style: theme.textTheme.bodyLarge?.copyWith(height: 1.8),
+              decoration: InputDecoration(
+                hintText: 'Tell your story...',
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                hintStyle: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.25),
+                ),
+              ),
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) {
+                  return 'Content is required';
+                }
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<BlogProvider>();
     final theme = Theme.of(context);
+    final hasSidebar = showSidebar(context);
 
+    final publishButton = ElevatedButton(
+      onPressed: provider.actionLoading ? null : _handlePublish,
+      style: ElevatedButton.styleFrom(
+        minimumSize: const Size(100, 40),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      child: provider.actionLoading
+          ? const SizedBox(
+              height: 18,
+              width: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : const Text('Publish'),
+    );
+
+    if (hasSidebar) {
+      return Scaffold(
+        body: Row(
+          children: [
+            const SidebarNav(currentIndex: 2),
+            Expanded(
+              child: FeedColumn(
+                maxWidth: 700,
+                child: Column(
+                  children: [
+                    StickyHeader(
+                      title: 'New Blog',
+                      showBackButton: true,
+                      onBack: _showDiscardDialog,
+                      actions: [publishButton],
+                    ),
+                    Expanded(child: _buildForm(theme)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Mobile
     return Scaffold(
       appBar: AppBar(
         leading: Padding(
@@ -193,130 +344,11 @@ class _CreateBlogScreenState extends State<CreateBlogScreen> {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: ElevatedButton(
-              onPressed: provider.actionLoading ? null : _handlePublish,
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(100, 40),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: provider.actionLoading
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('Publish'),
-            ),
+            child: publishButton,
           ),
         ],
       ),
-      body: ResponsiveCenter(
-        maxWidth: 700,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Images
-                HorizontalScrollableList(
-                  height: 120,
-                  spacing: 10,
-                  children: [
-                    // Image items
-                    ..._imageBytesList.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      return HorizontalImageItem(
-                        width: 120,
-                        borderRadius: BorderRadius.circular(14),
-                        image: Image.memory(
-                          _imageBytesList[index],
-                          fit: BoxFit.cover,
-                        ),
-                        onDelete: () => setState(() {
-                          _imageBytesList.removeAt(index);
-                          _imageExts.removeAt(index);
-                        }),
-                      );
-                    }),
-                    // Add image button
-                    if (_remainingSlots > 0)
-                      AddImageButton(
-                        width: 120,
-                        height: 120,
-                        borderRadius: BorderRadius.circular(14),
-                        label: '${_imageBytesList.length}/$_maxImages',
-                        onTap: _pickImage,
-                      ),
-                  ],
-                ),
-
-                const SizedBox(height: 24),
-
-                // Title
-                TextFormField(
-                  controller: _titleCtrl,
-                  maxLines: 3,
-                  minLines: 1,
-                  textCapitalization: TextCapitalization.sentences,
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'Give your blog a title...',
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    hintStyle: theme.textTheme.headlineSmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.25),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return 'Title is required';
-                    }
-                    return null;
-                  },
-                ),
-
-                Divider(color: theme.dividerTheme.color, height: 1),
-                const SizedBox(height: 16),
-
-                // Content
-                TextFormField(
-                  controller: _contentCtrl,
-                  maxLines: null,
-                  minLines: 15,
-                  textCapitalization: TextCapitalization.sentences,
-                  style: theme.textTheme.bodyLarge?.copyWith(height: 1.8),
-                  decoration: InputDecoration(
-                    hintText: 'Tell your story...',
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    hintStyle: TextStyle(
-                      color: theme.colorScheme.onSurface.withOpacity(0.25),
-                    ),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return 'Content is required';
-                    }
-                    return null;
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      body: _buildForm(theme),
     );
   }
 }

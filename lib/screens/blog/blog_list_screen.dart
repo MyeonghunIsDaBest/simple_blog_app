@@ -7,9 +7,9 @@ import 'package:provider/provider.dart';
 import '../../models/blog_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/blog_provider.dart';
-import '../../widgets/bottom_nav_bar.dart';
-import '../../widgets/hover_card.dart';
-import '../../widgets/responsive_layout.dart';
+import '../../widgets/app_shell.dart';
+import '../../widgets/feed_column.dart';
+import '../../widgets/sticky_header.dart';
 
 class BlogListScreen extends StatefulWidget {
   const BlogListScreen({super.key});
@@ -40,13 +40,16 @@ class _BlogListScreenState extends State<BlogListScreen> {
     final blogProvider = context.watch<BlogProvider>();
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: TopNavBar(
-        currentIndex: 0,
-        title: 'Blog',
+    return AppShell(
+      currentIndex: 0,
+      body: FeedColumn(
+        child: Column(
+          children: [
+            const StickyHeader(title: 'For you'),
+            Expanded(child: _buildBody(blogProvider, theme)),
+          ],
+        ),
       ),
-      bottomNavigationBar: const BottomNavBar(currentIndex: 0),
-      body: _buildBody(blogProvider, theme),
     );
   }
 
@@ -78,8 +81,7 @@ class _BlogListScreenState extends State<BlogListScreen> {
 
     if (provider.error != null && provider.blogs.isEmpty) {
       return Center(
-        child: ResponsiveCenter(
-          maxWidth: 400,
+        child: Padding(
           padding: const EdgeInsets.all(40),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -126,8 +128,7 @@ class _BlogListScreenState extends State<BlogListScreen> {
 
     if (provider.blogs.isEmpty) {
       return Center(
-        child: ResponsiveCenter(
-          maxWidth: 400,
+        child: Padding(
           padding: const EdgeInsets.all(40),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -176,50 +177,17 @@ class _BlogListScreenState extends State<BlogListScreen> {
     return RefreshIndicator(
       onRefresh: () => provider.loadBlogs(refresh: true),
       color: theme.colorScheme.primary,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final columns = responsiveGridCount(constraints.maxWidth);
-
-          if (columns == 1) {
-            // Mobile: single column list
-            return ResponsiveCenter(
-              maxWidth: 700,
-              child: ListView.builder(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                itemCount: provider.blogs.length,
-                itemBuilder: (context, index) {
-                  return _BlogCard(
-                    blog: provider.blogs[index],
-                    onTap: () =>
-                        context.push('/blog/${provider.blogs[index].id}'),
-                  );
-                },
-              ),
-            );
-          }
-
-          // Tablet/Desktop: grid layout
-          return ResponsiveCenter(
-            maxWidth: 1200,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: GridView.builder(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: columns,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: columns == 3 ? 0.75 : 0.85,
-              ),
-              itemCount: provider.blogs.length,
-              itemBuilder: (context, index) {
-                return _BlogCard(
-                  blog: provider.blogs[index],
-                  onTap: () =>
-                      context.push('/blog/${provider.blogs[index].id}'),
-                  isGrid: true,
-                );
-              },
-            ),
+      child: ListView.separated(
+        padding: EdgeInsets.zero,
+        itemCount: provider.blogs.length,
+        separatorBuilder: (_, __) => Divider(
+          height: 1,
+          color: theme.dividerTheme.color,
+        ),
+        itemBuilder: (context, index) {
+          return _FeedBlogCard(
+            blog: provider.blogs[index],
+            onTap: () => context.push('/blog/${provider.blogs[index].id}'),
           );
         },
       ),
@@ -228,225 +196,203 @@ class _BlogListScreenState extends State<BlogListScreen> {
 }
 
 // ═══════════════════════════════════════════
-//  BLOG CARD WITH HOVER SUPPORT
+//  TWITTER-STYLE FEED BLOG CARD
 // ═══════════════════════════════════════════
-class _BlogCard extends StatelessWidget {
+class _FeedBlogCard extends StatefulWidget {
   final BlogModel blog;
   final VoidCallback onTap;
-  final bool isGrid;
 
-  const _BlogCard({
-    required this.blog,
-    required this.onTap,
-    this.isGrid = false,
-  });
+  const _FeedBlogCard({required this.blog, required this.onTap});
+
+  @override
+  State<_FeedBlogCard> createState() => _FeedBlogCardState();
+}
+
+class _FeedBlogCardState extends State<_FeedBlogCard> {
+  bool _hovering = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final blog = widget.blog;
 
-    return HoverCard(
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header: Author info + menu
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: isGrid ? 16 : 20,
-                  backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
-                  backgroundImage: blog.author?.avatarUrl.isNotEmpty == true
-                      ? NetworkImage(blog.author!.avatarUrl)
-                      : null,
-                  child: blog.author?.avatarUrl.isEmpty != false
-                      ? Text(
-                          blog.author?.initials ?? '?',
-                          style: TextStyle(
-                            fontSize: isGrid ? 9 : 10,
-                            fontWeight: FontWeight.w700,
-                            color: theme.colorScheme.primary,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          color: _hovering
+              ? theme.colorScheme.onSurface.withOpacity(0.02)
+              : Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Avatar column
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                backgroundImage: blog.author?.avatarUrl.isNotEmpty == true
+                    ? NetworkImage(blog.author!.avatarUrl)
+                    : null,
+                child: blog.author?.avatarUrl.isEmpty != false
+                    ? Text(
+                        blog.author?.initials ?? '?',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.primary,
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 12),
+
+              // Content column
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Author + time + menu
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            blog.author?.nameOrEmail ?? 'Unknown',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        blog.author?.nameOrEmail ?? 'Unknown',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        _formatDate(blog.createdAt),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurface.withOpacity(0.4),
+                        Text(
+                          '  ·  ${_formatDate(blog.createdAt)}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color:
+                                theme.colorScheme.onSurface.withOpacity(0.45),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                PopupMenuButton<String>(
-                  onSelected: (value) {
-                    if (value == 'edit') {
-                      context.push('/edit/${blog.id}');
-                    } else if (value == 'delete') {
-                      _showDeleteDialog(context);
-                    }
-                  },
-                  itemBuilder: (BuildContext context) => [
-                    const PopupMenuItem(
-                      value: 'edit',
-                      child: Row(
-                        children: [
-                          Icon(Icons.edit, size: 18),
-                          SizedBox(width: 8),
-                          Text('Edit'),
-                        ],
-                      ),
+                        const Spacer(),
+                        _buildPopupMenu(context, theme),
+                      ],
                     ),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Row(
-                        children: [
-                          Icon(Icons.delete, size: 18, color: Colors.red),
-                          SizedBox(width: 8),
-                          Text('Delete', style: TextStyle(color: Colors.red)),
-                        ],
+
+                    const SizedBox(height: 4),
+
+                    // Blog title (prominent)
+                    if (blog.title.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          blog.title,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
+
+                    // Content preview
+                    Text(
+                      blog.preview(maxLength: 150),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurface.withOpacity(0.8),
+                        height: 1.4,
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+
+                    // Image
+                    if (blog.hasImages) ...[
+                      const SizedBox(height: 10),
+                      _buildImage(theme),
+                    ],
+
+                    const SizedBox(height: 10),
+
+                    // Engagement row
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _EngagementButton(
+                          icon: Icons.chat_bubble_outline,
+                          count: blog.commentCount,
+                          hoverColor: Colors.blue,
+                          onTap: widget.onTap,
+                        ),
+                        _EngagementButton(
+                          icon: Icons.repeat_rounded,
+                          hoverColor: Colors.green,
+                          onTap: () {},
+                        ),
+                        _EngagementButton(
+                          icon: blog.isLikedByCurrentUser
+                              ? Icons.favorite
+                              : Icons.favorite_outline,
+                          count: blog.likeCount,
+                          isActive: blog.isLikedByCurrentUser,
+                          activeColor: Colors.red,
+                          hoverColor: Colors.red,
+                          onTap: () =>
+                              context.read<BlogProvider>().toggleLike(blog.id),
+                        ),
+                        _EngagementButton(
+                          icon: Icons.share_outlined,
+                          hoverColor: Colors.blue,
+                          onTap: () {},
+                        ),
+                      ],
                     ),
                   ],
-                  child: Icon(Icons.more_vert,
-                      size: 18,
-                      color: theme.colorScheme.onSurface.withOpacity(0.5)),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-
-          // Title
-          if (blog.title.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                blog.title,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-                maxLines: isGrid ? 1 : 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-
-          if (blog.title.isNotEmpty) const SizedBox(height: 8),
-
-          // Content preview
-          if (!isGrid || !blog.hasImages)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                blog.preview(maxLength: isGrid ? 80 : 200),
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  height: 1.5,
-                  color: theme.colorScheme.onSurface.withOpacity(0.8),
-                ),
-                maxLines: isGrid ? 2 : 4,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-
-          if (!isGrid) const SizedBox(height: 12),
-
-          // Image
-          if (blog.hasImages)
-            isGrid
-                ? Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: _buildImage(theme),
-                    ),
-                  )
-                : Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: _buildImage(theme),
-                  ),
-
-          if (blog.hasImages && !isGrid) const SizedBox(height: 12),
-
-          // Engagement row
-          if (!isGrid) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _EngagementButton(
-                      icon: blog.isLikedByCurrentUser
-                          ? Icons.favorite
-                          : Icons.favorite_outline,
-                      count: blog.likeCount,
-                      isActive: blog.isLikedByCurrentUser,
-                      onTap: () =>
-                          context.read<BlogProvider>().toggleLike(blog.id),
-                    ),
-                  ),
-                  Expanded(
-                    child: _EngagementButton(
-                      icon: Icons.chat_bubble_outline,
-                      count: blog.commentCount,
-                      onTap: onTap,
-                    ),
-                  ),
-                  Expanded(
-                    child: _EngagementButton(
-                      icon: Icons.share_outlined,
-                      onTap: onTap,
-                    ),
-                  ),
-                  Expanded(
-                    child: _EngagementButton(
-                      icon: Icons.send_outlined,
-                      onTap: onTap,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 4),
-          ] else ...[
-            // Compact engagement for grid
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(
-                    blog.isLikedByCurrentUser
-                        ? Icons.favorite
-                        : Icons.favorite_outline,
-                    size: 14,
-                    color: blog.isLikedByCurrentUser ? Colors.red : Colors.grey,
-                  ),
-                  const SizedBox(width: 4),
-                  Text('${blog.likeCount}', style: theme.textTheme.labelSmall),
-                  const SizedBox(width: 12),
-                  Icon(Icons.chat_bubble_outline, size: 14, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text('${blog.commentCount}',
-                      style: theme.textTheme.labelSmall),
-                ],
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildPopupMenu(BuildContext context, ThemeData theme) {
+    return PopupMenuButton<String>(
+      onSelected: (value) {
+        if (value == 'edit') {
+          context.push('/edit/${widget.blog.id}');
+        } else if (value == 'delete') {
+          _showDeleteDialog(context);
+        }
+      },
+      itemBuilder: (BuildContext context) => [
+        const PopupMenuItem(
+          value: 'edit',
+          child: Row(
+            children: [
+              Icon(Icons.edit, size: 18),
+              SizedBox(width: 8),
+              Text('Edit'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              Icon(Icons.delete, size: 18, color: Colors.red),
+              SizedBox(width: 8),
+              Text('Delete', style: TextStyle(color: Colors.red)),
+            ],
+          ),
+        ),
+      ],
+      child: Icon(Icons.more_horiz_rounded,
+          size: 18, color: theme.colorScheme.onSurface.withOpacity(0.4)),
     );
   }
 
@@ -454,17 +400,17 @@ class _BlogCard extends StatelessWidget {
     return Stack(
       children: [
         ClipRRect(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           child: Image.network(
-            blog.imageUrl,
-            height: isGrid ? double.infinity : 180,
+            widget.blog.imageUrl,
+            height: 200,
             width: double.infinity,
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => Container(
-              height: isGrid ? double.infinity : 180,
+              height: 200,
               decoration: BoxDecoration(
                 color: theme.colorScheme.primary.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
               ),
               child: Center(
                 child: Icon(
@@ -476,7 +422,7 @@ class _BlogCard extends StatelessWidget {
             ),
           ),
         ),
-        if (blog.imageUrls.length > 1)
+        if (widget.blog.imageUrls.length > 1)
           Positioned(
             top: 8,
             right: 8,
@@ -493,7 +439,7 @@ class _BlogCard extends StatelessWidget {
                       size: 12, color: Colors.white),
                   const SizedBox(width: 4),
                   Text(
-                    '${blog.imageUrls.length}',
+                    '${widget.blog.imageUrls.length}',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 11,
@@ -514,10 +460,10 @@ class _BlogCard extends StatelessWidget {
       final now = DateTime.now();
       final diff = now.difference(date);
       if (diff.inMinutes < 1) return 'Just now';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-      if (diff.inHours < 24) return '${diff.inHours}h ago';
-      if (diff.inDays < 7) return '${diff.inDays}d ago';
-      return DateFormat('MMM dd, yyyy').format(date);
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+      if (diff.inHours < 24) return '${diff.inHours}h';
+      if (diff.inDays < 7) return '${diff.inDays}d';
+      return DateFormat('MMM dd').format(date);
     } catch (_) {
       return dateStr;
     }
@@ -544,7 +490,7 @@ class _BlogCard extends StatelessWidget {
     ).then((confirmed) async {
       if (confirmed == true && context.mounted) {
         final blogProvider = context.read<BlogProvider>();
-        final success = await blogProvider.deleteBlog(blog.id);
+        final success = await blogProvider.deleteBlog(widget.blog.id);
         if (success && context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Blog deleted successfully')),
@@ -555,20 +501,24 @@ class _BlogCard extends StatelessWidget {
   }
 }
 
-// Engagement button widget
+// ═══════════════════════════════════════════
+//  ENGAGEMENT BUTTON WITH HOVER COLORS
+// ═══════════════════════════════════════════
 class _EngagementButton extends StatefulWidget {
   final IconData icon;
-  final String? label;
   final VoidCallback onTap;
   final bool isActive;
   final int count;
+  final Color? activeColor;
+  final Color hoverColor;
 
   const _EngagementButton({
     required this.icon,
-    this.label,
     required this.onTap,
     this.isActive = false,
     this.count = 0,
+    this.activeColor,
+    this.hoverColor = Colors.blue,
   });
 
   @override
@@ -582,29 +532,27 @@ class _EngagementButtonState extends State<_EngagementButton> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final color = widget.isActive
-        ? Colors.red
+        ? (widget.activeColor ?? widget.hoverColor)
         : _hovering
-            ? theme.colorScheme.primary
-            : theme.colorScheme.onSurface.withOpacity(0.6);
+            ? widget.hoverColor
+            : theme.colorScheme.onSurface.withOpacity(0.5);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
       cursor: SystemMouseCursors.click,
-      child: InkWell(
+      child: GestureDetector(
         onTap: widget.onTap,
-        borderRadius: BorderRadius.circular(8),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
           decoration: BoxDecoration(
             color: _hovering
-                ? theme.colorScheme.primary.withOpacity(0.04)
+                ? widget.hoverColor.withOpacity(0.08)
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(20),
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(widget.icon, size: 18, color: color),
@@ -612,17 +560,9 @@ class _EngagementButtonState extends State<_EngagementButton> {
                 const SizedBox(width: 4),
                 Text(
                   '${widget.count}',
-                  style: theme.textTheme.labelSmall?.copyWith(
+                  style: TextStyle(
                     color: color,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ] else if (widget.label != null) ...[
-                const SizedBox(width: 6),
-                Text(
-                  widget.label!,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: color,
+                    fontSize: 13,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
